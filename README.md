@@ -1,6 +1,6 @@
 <div align="center">
   <h1>vrzaq</h1>
-  <p><strong>Quantum Formatter by Razzaq</strong></p>
+  <p><strong>Quantum Formatter by Arifi Razzaq</strong></p>
   <p>Sebuah platform pemrosesan kode yang cerdas, dapat diperluas, dan digerakkan oleh event. Lebih dari sekadar pemformat kode, `vrzaq` adalah sistem penjaga kualitas kode Anda.</p>
   
   <p>

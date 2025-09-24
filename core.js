@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import Joi from 'joi';
 import prettier from 'prettier';
-import acorn from 'acorn';
+import * as acorn from 'acorn';
 import pLimit from 'p-limit';
 import ignore from 'ignore';
 import { pathToFileURL } from 'url';

@@ -34,7 +34,7 @@ export async function loadConfig() {
         targetExtensions: ['.js', '.json', '.mjs', '.cjs', '.ts'],
         ignorePatterns: ['node_modules/**', '.git/**', '.backups_vrzaq/**'],
         backupRetentionLimit: 5,
-        concurrency: os.cpus().length,
+        concurrency: Math.max(1, os.cpus().length),
         hashAlgorithm: 'sha256',
         plugins: [],
         cacheVersion: '1.0.0', // Versi untuk invalidasi cache

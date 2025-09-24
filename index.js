@@ -2,9 +2,12 @@
 import { EventEmitter } from 'events';
 import chokidar from 'chokidar';
 import { loadConfig } from './config.js';
-import * as BackupManager, { createBackup } from './backup-manager.js';
-import * as Core, { scanFiles, processFiles, initialize, analyzeIgnore } from './core.js';
 import logger from './logger.js';
+import * as BackupManager from './backup-manager.js';
+import * as Core from './core.js';
+
+const { createBackup } = BackupManager;
+const { scanFiles, processFiles, initialize, analyzeIgnore } = Core;
 
 export { BackupManager, Core };
 

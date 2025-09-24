@@ -2,7 +2,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import tar from 'tar';
+import * as tar from 'tar';
 import crypto from 'crypto';
 import prompts from 'prompts';
 import { loadConfig } from './config.js';

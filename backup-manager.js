@@ -56,18 +56,12 @@ export async function createBackup(fileList) {
 export async function listBackups() {
   try {
     const files = (await fs.readdir(config.backupDir)).filter(f => f.endsWith('.tar.gz'));
-    if (files.length === 0) {
-      logger.info('No backups found.');
-      return;
-    }
-    logger.info('📂 Available backups:');
-    files.forEach((f, i) => console.log(`${i + 1}. ${f}`));
+    return files; // <-- KUNCI: Kembalikan array file
   } catch (error) {
     if (error.code === 'ENOENT') {
-      logger.info('Backup directory does not exist. No backups found.');
-    } else {
-      logger.error('Failed to list backups.', error);
+      return []; // Kembalikan array kosong jika direktori tidak ada
     }
+    throw error; // Lemparkan error lain
   }
 }
 

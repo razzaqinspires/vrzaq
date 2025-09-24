@@ -89,15 +89,12 @@ async function loadReporter(name) {
     }
 }
 
-// Fungsi baru untuk `qf why`
 export async function analyzeWhy(filePath) {
     const config = await loadConfig();
     const reason = await analyzeIgnore(config, filePath);
-    if (reason) {
-        logger.info(`File "${filePath}" is ignored due to:`);
-        logger.special(` -> Rule: "${reason.rule}"`);
-        logger.special(` -> Source: ${reason.source}`);
-    } else {
-        logger.success(`File "${filePath}" is NOT ignored.`);
-    }
+    return { // <-- KUNCI: Kembalikan objek hasil
+        isIgnored: !!reason,
+        reason: reason || null,
+        file: filePath
+    };
 }

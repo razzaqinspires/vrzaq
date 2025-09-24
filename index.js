@@ -2,12 +2,11 @@
 import { EventEmitter } from 'events';
 import chokidar from 'chokidar';
 import { loadConfig } from './config.js';
-import { createBackup } from './backup-manager.js';
-import { scanFiles, processFiles, initialize, analyzeIgnore } from './core.js';
+import * as BackupManager, { createBackup } from './backup-manager.js';
+import * as Core, { scanFiles, processFiles, initialize, analyzeIgnore } from './core.js';
 import logger from './logger.js';
 
-// Ekspor fungsi inti
-export { BackupManager, Core } from './export-bridge.js'; // Buat file untuk re-export
+export { BackupManager, Core };
 
 /**
  * Fungsi inti yang dapat diekspor untuk menjalankan Quantum-Formatter secara programatik.
@@ -92,7 +91,7 @@ async function loadReporter(name) {
 export async function analyzeWhy(filePath) {
     const config = await loadConfig();
     const reason = await analyzeIgnore(config, filePath);
-    return { // <-- KUNCI: Kembalikan objek hasil
+    return {
         isIgnored: !!reason,
         reason: reason || null,
         file: filePath

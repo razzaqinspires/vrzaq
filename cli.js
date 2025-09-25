@@ -51,7 +51,6 @@ async function cli() {
                 });
             } catch (error) {
                 logger.error('The CLI process encountered a fatal error:', error);
-                process.exit(1);
             }
         });
 
@@ -108,5 +107,4 @@ async function cli() {
 // Menjalankan fungsi CLI dan menangani error tak terduga
 cli().catch(err => {
     logger.error('A fatal unexpected error occurred:', err);
-    process.exit(1);
 });

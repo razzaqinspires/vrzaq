@@ -1,6 +1,6 @@
 {
   "name": "vrzaq",
-  "version": "9.8.4",
+  "version": "31.2.8",
   "description": "An extensible, event-driven code processing platform by Razzaq.",
   "type": "module",
   "main": "index.js",

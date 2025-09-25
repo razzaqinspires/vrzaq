@@ -1,164 +1,235 @@
-// backup-manager.js
+// In memory of Dr. Arifi Razzaq - The Bootstrap Loader
+// Saweria: https://saweria.co.arzzq
 
-import fs from 'fs/promises';
+// backup-manager.js (INTEGRITY & EFFICIENCY SUPERIOR EDITION)
+import fs from 'fs'; // Dibutuhkan untuk stream
+import fsp from 'fs/promises';
 import path from 'path';
 import * as tar from 'tar';
 import crypto from 'crypto';
-import prompts from 'prompts';
+import os from 'os';
+import { performance } from 'perf_hooks';
 import { loadConfig } from './config.js';
 import logger from './logger.js';
 
-// Memuat konfigurasi sekali saat modul diinisialisasi
+// Custom Errors untuk penanganan yang lebih spesifik
+class IntegrityMismatchError extends Error { constructor(message) { super(message); this.name = 'IntegrityMismatchError'; } }
+class ManifestNotFoundError extends Error { constructor(message) { super(message); this.name = 'ManifestNotFoundError'; } }
+
 const config = await loadConfig();
+const AUDIT_LOG = path.join(config.backupDir, '.backup-audit.log');
 
 /**
- * Menghasilkan file manifest yang berisi hash integritas dari arsip dan file di dalamnya.
- * @param {string} archivePath - Path ke file arsip .tar.gz.
- * @returns {Promise<object>} Objek manifest.
+ * Utility: Tulis log audit yang komprehensif.
  */
-async function generateManifest(archivePath) {
-  const archiveData = await fs.readFile(archivePath);
-  const archiveHash = crypto.createHash(config.hashAlgorithm).update(archiveData).digest('hex');
+async function writeAudit(action, details = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    action,
+    ...details,
+  };
+  await fsp.mkdir(config.backupDir, { recursive: true });
+  await fsp.appendFile(AUDIT_LOG, JSON.stringify(entry) + '\n');
+}
+
+/**
+ * Menghitung hash dari file menggunakan stream untuk efisiensi memori.
+ * @param {string} filePath Path ke file.
+ * @param {string} algorithm Algoritma hash.
+ * @returns {Promise<string>} Hash dalam format hex.
+ */
+function getStreamHash(filePath, algorithm) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash(algorithm);
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+/**
+ * Menghasilkan manifest dengan hash berbasis stream.
+ */
+async function generateManifest(archivePath, fileList) {
+  const archiveHash = await getStreamHash(archivePath, config.hashAlgorithm);
+  const fileStats = await Promise.all(
+    fileList.map(async f => {
+      try {
+        const stats = await fsp.stat(path.join(config.rootDir, f));
+        return { file: f, size: stats.size };
+      } catch { return { file: f, size: 0, error: 'File not found during manifest creation' }; }
+    })
+  );
 
   return {
     createdAt: new Date().toISOString(),
+    archive: path.basename(archivePath),
     archiveHash,
     algorithm: config.hashAlgorithm,
-    // Di masa depan, kita bisa menambahkan hash per file di sini untuk verifikasi yang lebih mendalam
+    environment: { os: `${os.type()} ${os.release()}`, node: process.version },
+    files: {
+      count: fileStats.length,
+      totalSize: fileStats.reduce((a, b) => a + b.size, 0),
+      details: fileStats,
+    },
   };
 }
 
 /**
- * Membuat backup dari direktori root ke dalam file .tar.gz dengan file manifest.
- * @param {string[]} fileList - Daftar file yang akan dimasukkan ke dalam backup.
- * @returns {Promise<string>} Path ke file backup yang telah dibuat.
+ * Membuat backup dengan efisiensi memori dan logging yang ditingkatkan.
  */
 export async function createBackup(fileList) {
+  const start = performance.now();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupFile = path.join(config.backupDir, `backup-${timestamp}.tar.gz`);
   const manifestFile = `${backupFile}.manifest.json`;
 
-  await fs.mkdir(config.backupDir, { recursive: true });
+  try {
+    await fsp.mkdir(config.backupDir, { recursive: true });
+    logger.info(`Creating backup with ${fileList.length} files...`);
 
-  await tar.c({ gzip: true, file: backupFile, cwd: config.rootDir }, fileList);
-  
-  const manifest = await generateManifest(backupFile);
-  await fs.writeFile(manifestFile, JSON.stringify(manifest, null, 2));
+    // Gunakan opsi kompresi dari config
+    const gzipOptions = config.backup?.compressionLevel ? { level: config.backup.compressionLevel } : true;
+    await tar.c({ gzip: gzipOptions, file: backupFile, cwd: config.rootDir }, fileList);
 
-  logger.success(`Backup created: ${path.basename(backupFile)}`);
-  logger.dim(`Manifest integrity file created: ${path.basename(manifestFile)}`);
-  return backupFile;
+    const manifest = await generateManifest(backupFile, fileList);
+    await fsp.writeFile(manifestFile, JSON.stringify(manifest, null, 2));
+
+    const duration = performance.now() - start;
+    logger.success(`Backup created: ${path.basename(backupFile)} (${manifest.files.totalSize} bytes in ${duration.toFixed(2)}ms)`);
+    await writeAudit('createBackup', { backup: path.basename(backupFile), status: 'SUCCESS', duration, files: manifest.files.count });
+    return backupFile;
+  } catch (error) {
+    const duration = performance.now() - start;
+    await writeAudit('createBackup', { status: 'FAILURE', duration, error: error.message });
+    throw error;
+  }
 }
 
 /**
- * Menampilkan daftar semua backup yang tersedia di direktori backup.
+ * Menampilkan daftar backup.
  */
 export async function listBackups() {
   try {
-    const files = (await fs.readdir(config.backupDir)).filter(f => f.endsWith('.tar.gz'));
-    return files; // <-- KUNCI: Kembalikan array file
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return []; // Kembalikan array kosong jika direktori tidak ada
+    const files = (await fsp.readdir(config.backupDir)).filter(f => f.endsWith('.tar.gz'));
+    const results = [];
+    for (const f of files) {
+      const manifestPath = path.join(config.backupDir, `${f}.manifest.json`);
+      try {
+        const manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+        results.push({ name: f, createdAt: manifest.createdAt, size: manifest.files.totalSize, fileCount: manifest.files.count });
+      } catch {
+        results.push({ name: f, note: '⚠️ Manifest missing or corrupt' });
+      }
     }
-    throw error; // Lemparkan error lain
+    return results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
   }
 }
 
 /**
- * Memulihkan proyek dari file backup yang ditentukan setelah verifikasi integritas.
- * @param {string} filename - Nama file backup yang akan dipulihkan.
- * @param {boolean} [force=false] - Jika true, lewati prompt konfirmasi.
+ * Restore dengan validasi dan snapshot otomatis (tanpa prompt UI).
  */
-export async function restoreBackup(filename, force = false) {
-    if (!force) {
-        const response = await prompts({
-            type: 'confirm',
-            name: 'value',
-            message: `Are you sure you want to restore from "${filename}"? This will overwrite current files.`,
-            initial: false
-        });
-        if (!response.value) {
-            logger.warn('Restore operation cancelled by user.');
-            return;
-        }
-    }
+export async function restoreBackup(filename) {
+  const start = performance.now();
+  const filePath = path.join(config.backupDir, filename);
+  const manifestPath = `${filePath}.manifest.json`;
 
-    const filePath = path.join(config.backupDir, filename);
-    const manifestPath = `${filePath}.manifest.json`;
-
-    try {
-        const manifestData = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-        const archiveData = await fs.readFile(filePath);
-        const currentArchiveHash = crypto.createHash(manifestData.algorithm).update(archiveData).digest('hex');
-
-        if (currentArchiveHash !== manifestData.archiveHash) {
-            throw new Error('Backup archive is corrupt! Integrity hash mismatch.');
-        }
-        logger.success('Backup archive integrity verified.');
-
-        await tar.x({ file: filePath, C: config.rootDir });
-        logger.success(`Restored backup from ${filename}`);
-    } catch (error) {
-        if (error.code === 'ENOENT') {
-            logger.error(`Restore failed: Backup file or manifest not found for "${filename}".`);
-        } else {
-            logger.error(`Restore failed: ${error.message}`, error);
-        }
-    }
-}
-
-/**
- * Membersihkan backup lama, hanya menyisakan sejumlah backup terbaru sesuai limit.
- * @param {number} limit - Jumlah backup terbaru yang akan disimpan.
- * @param {boolean} [force=false] - Jika true, lewati prompt konfirmasi.
- */
-export async function cleanBackups(limit, force = false) {
   try {
-    const files = await fs.readdir(config.backupDir);
-    const backups = files
-      .filter(f => f.endsWith('.tar.gz'))
-      .map(async f => ({
-        name: f,
-        time: (await fs.stat(path.join(config.backupDir, f))).mtime.getTime(),
-      }));
+    const manifestData = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+    const currentHash = await getStreamHash(filePath, manifestData.algorithm);
 
-    const sortedBackups = (await Promise.all(backups)).sort((a, b) => b.time - a.time);
-
-    if (sortedBackups.length <= limit) {
-      logger.info('No cleanup needed.');
-      return;
+    if (currentHash !== manifestData.archiveHash) {
+      throw new IntegrityMismatchError('Backup corrupt! Integrity hash mismatch.');
     }
+    logger.success('Backup archive integrity verified.');
 
-    const toDelete = sortedBackups.slice(limit);
+    const allFiles = (await fsp.readdir(config.rootDir, { recursive: true })).filter(f => f.isFile());
+    const snapshotFile = await createBackup(allFiles);
+    logger.dim(`Automatic snapshot created before restore: ${snapshotFile}`);
 
-    if (!force) {
-        logger.warn(`The following old backups will be deleted:`);
-        toDelete.forEach(f => logger.dim(`  - ${f.name}`));
-        const response = await prompts({
-            type: 'confirm',
-            name: 'value',
-            message: `Proceed with deleting ${toDelete.length} backup(s)?`,
-            initial: false
-        });
-        if (!response.value) {
-            logger.warn('Cleanup operation cancelled by user.');
-            return;
+    await tar.x({ file: filePath, C: config.rootDir });
+    const duration = performance.now() - start;
+    logger.success(`Restored backup: ${filename}`);
+    await writeAudit('restoreBackup', { backup: filename, status: 'SUCCESS', duration });
+  } catch (error) {
+    const duration = performance.now() - start;
+    await writeAudit('restoreBackup', { backup: filename, status: 'FAILURE', duration, error: error.message });
+    if (error.code === 'ENOENT' && error.path === manifestPath) {
+      throw new ManifestNotFoundError(`Manifest file not found for ${filename}. Cannot restore securely.`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Menjalankan verifikasi integritas proaktif pada semua backup.
+ */
+export async function verifyBackups() {
+    const report = { healthy: [], corrupt: [], orphaned_archives: [], orphaned_manifests: [] };
+    const files = await fsp.readdir(config.backupDir);
+    const archives = new Set(files.filter(f => f.endsWith('.tar.gz')));
+    const manifests = new Set(files.filter(f => f.endsWith('.manifest.json')));
+
+    for (const manifestFile of manifests) {
+        const archiveFile = manifestFile.replace('.manifest.json', '');
+        if (archives.has(archiveFile)) {
+            try {
+                const manifestData = JSON.parse(await fsp.readFile(path.join(config.backupDir, manifestFile), 'utf8'));
+                const currentHash = await getStreamHash(path.join(config.backupDir, archiveFile), manifestData.algorithm);
+                if (currentHash === manifestData.archiveHash) {
+                    report.healthy.push(archiveFile);
+                } else {
+                    report.corrupt.push({ file: archiveFile, reason: 'Hash mismatch' });
+                }
+            } catch (err) {
+                report.corrupt.push({ file: archiveFile, reason: `Manifest unreadable: ${err.message}` });
+            }
+            archives.delete(archiveFile); // Hapus dari set agar sisanya adalah yatim
+        } else {
+            report.orphaned_manifests.push(manifestFile);
         }
     }
-    
-    for (const file of toDelete) {
-      const backupPath = path.join(config.backupDir, file.name);
-      const manifestPath = `${backupPath}.manifest.json`;
-      // Menghapus file backup dan manifest-nya secara bersamaan
-      await fs.unlink(backupPath);
-      // Menggunakan .catch() untuk mengabaikan error jika file manifest tidak ada karena suatu alasan
-      await fs.unlink(manifestPath).catch(() => {});
-      logger.warn(`Deleted old backup: ${file.name}`);
+    report.orphaned_archives = [...archives];
+    await writeAudit('verifyBackups', { status: 'SUCCESS', report });
+    return report;
+}
+
+
+/**
+ * Membersihkan backup lama (tanpa prompt UI).
+ */
+export async function cleanBackups(limit) {
+    const start = performance.now();
+    try {
+        const allBackups = await listBackups(); // listBackups sudah diurutkan
+        const toDelete = allBackups.slice(limit);
+
+        if (toDelete.length === 0) {
+            logger.info('No old backups to clean.');
+            return;
+        }
+
+        const deletedFiles = [];
+        for (const backup of toDelete) {
+            const backupPath = path.join(config.backupDir, backup.name);
+            const manifestPath = `${backupPath}.manifest.json`;
+            await fsp.unlink(backupPath).catch(() => {});
+            await fsp.unlink(manifestPath).catch(() => {});
+            deletedFiles.push(backup.name);
+            logger.warn(`Deleted old backup: ${backup.name}`);
+        }
+        
+        const duration = performance.now() - start;
+        await writeAudit('cleanBackups', { status: 'SUCCESS', deletedCount: deletedFiles.length, keptCount: limit, duration, deletedFiles });
+    } catch (error) {
+        if (error.code !== 'ENOENT') {
+            const duration = performance.now() - start;
+            await writeAudit('cleanBackups', { status: 'FAILURE', duration, error: error.message });
+            logger.error('Failed to clean backups.', error);
+        }
     }
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      logger.error('Failed to clean backups.', error);
-    }
-  }
 }

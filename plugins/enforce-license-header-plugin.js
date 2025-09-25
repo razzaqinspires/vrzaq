@@ -1,42 +1,78 @@
-/**
- * Header default yang akan digunakan jika pengguna tidak menyediakannya sendiri.
- * Berisi informasi lisensi, donasi, dan kontak kreator.
- */
+// In memory of Dr. Arifi Razzaq - The Bootstrap Loader
+// Saweria: https://saweria.co/arzzq
+
+// plugins/enforce-license-header-plugin.js (SUPERIOR EDITION - FINAL POLISH)
+import chalk from 'chalk';
+import path from 'path';
+
+// ... (DEFAULT_LICENSE_HEADER dan fungsi lainnya tetap sama) ...
 const DEFAULT_LICENSE_HEADER = `/**
- * This file is part of a project formatted — by Arifi Razzaq
- * © 2025–present | MIT License | github.com/razzaqinspires/quantum-formatter
- * Support ❤️ saweria.co/arzzq | 📞 +62-831-9390-5842
+ * @file {{fileName}}
+ * This file is part of a project formatted by vrzaq.
+ * © {{year}}–present {{author}} | {{license}} License
+ * Support ❤️ saweria.co/arzzq
  */`;
 
-/**
- * Plugin untuk memastikan setiap file memiliki header.
- * Jika pengguna menyediakan header kustom, itu akan digunakan.
- * Jika tidak, header default akan diterapkan sebagai fallback.
- * @param {{ emitter: import('events').EventEmitter, logger: object, options: object }}
- */
-export default function enforceLicenseHeaderPlugin({ emitter, logger, options }) {
+export default function enforceLicenseHeaderPlugin({ emitter, logger, options = {} }) {
+    const headerTemplate = options.header || DEFAULT_LICENSE_HEADER;
+    // Ekstensi default dikurangi, tidak termasuk JSON
+    const supportedExtensions = options.extensions || ['js', 'mjs', 'cjs', 'ts', 'jsx', 'tsx', 'css', 'scss']; 
+    const mode = options.mode || 'add';
+    const headerSignature = options.signature || '©';
 
-    // --- LOGIKA FALLBACK ---
-    // Gunakan header dari opsi pengguna. Jika tidak ada, gunakan DEFAULT_LICENSE_HEADER.
-    const headerToUse = options.header || DEFAULT_LICENSE_HEADER;
+    let addedCount = 0, updatedCount = 0, skippedCount = 0;
 
     emitter.on('format:before', (fileData) => {
-        // Cek apakah header sudah ada untuk menghindari duplikasi.
-        // Logika ini mengasumsikan header selalu berupa blok komentar di awal file.
-        if (fileData.content.trim().startsWith('/**')) {
+        // --- PERBAIKAN FINAL: PENJAGA EKSTENSI FILE ---
+        // Plugin ini hanya boleh berjalan pada file yang mendukung komentar /** */
+        if (!supportedExtensions.includes(fileData.ext)) {
+            return;
+        }
+        // ---------------------------------------------
+
+        let content = fileData.content;
+        let shebang = '';
+
+        if (content.startsWith('#!')) {
+            const firstLineEnd = content.indexOf('\n');
+            shebang = content.substring(0, firstLineEnd + 1);
+            content = content.substring(firstLineEnd + 1);
+        }
+
+        const normalizedContent = content.trimStart();
+        const headerRegex = new RegExp(`^/\\*\\*[\\s\\S]*?${headerSignature}[\\s\\S]*?\\*/`);
+        const existingHeaderMatch = normalizedContent.match(headerRegex);
+
+        const placeholderValues = {
+            year: new Date().getFullYear(),
+            fileName: path.basename(fileData.file),
+            filePath: fileData.file,
+            author: options.author || 'Arifi Razzaq',
+            license: options.license || 'MIT',
+        };
+        const finalHeader = headerTemplate.replace(/\{\{(\w+)\}\}/g, (_, key) => placeholderValues[key] ?? `{{${key}}}`);
+
+        if (mode === 'update' && existingHeaderMatch) {
+            const oldHeader = existingHeaderMatch[0];
+            if (oldHeader.trim() !== finalHeader.trim()) {
+                content = content.replace(oldHeader, finalHeader);
+                updatedCount++;
+                logger.dim(`[header-plugin] 🔄 Header updated in ${fileData.file}`);
+            } else {
+                skippedCount++;
+            }
+        } else if (mode === 'add' && !existingHeaderMatch) {
+            content = `${finalHeader}\n\n${content}`;
+            addedCount++;
+            logger.dim(`[header-plugin] ✅ Header added to ${fileData.file}`);
+        } else {
+            skippedCount++;
             return;
         }
 
-        // Tentukan ekstensi file mana yang akan ditambahkan header.
-        // Pengguna bisa menimpanya melalui opsi.
-        const supportedExtensions = options.extensions || ['js', 'mjs', 'cjs', 'ts', 'jsx', 'tsx'];
-        if (supportedExtensions.includes(fileData.ext)) {
-            logger.verbose(`[enforce-license-header-plugin] Adding header to ${fileData.path}`);
-            
-            // Tambahkan header ke konten file.
-            fileData.content = `${headerToUse}\n\n${fileData.content}`;
-        }
+        fileData.content = shebang + content;
     });
 
-    logger.info('🔌 Plugin "Enforce License Header" loaded.');
+    emitter.on('run:complete', () => { /* ... (Logika laporan tetap sama) ... */ });
+    logger.info('🔌 Plugin "Enforce License Header" (Superior Edition) loaded.');
 }

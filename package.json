@@ -1,11 +1,11 @@
 {
   "name": "vrzaq",
-  "version": "31.2.8",
-  "description": "An extensible, event-driven code processing platform by Razzaq.",
+  "version": "44.9.2",
+  "description": "An extensible, event-driven code processing platform by Arifi Razzaq.",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "razzaq": "./cli.js"
+    "vrzaq": "./cli.js"
   },
   "files": [
     "backup-manager.js",
@@ -18,6 +18,9 @@
     "reporters/"
   ],
   "scripts": {
+    "format": "node cli.js run",
+    "backup:list": "node cli.js backup list",
+    "backup:verify": "node cli.js backup verify",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -38,21 +41,15 @@
   "dependencies": {
     "@babel/parser": "^7.28.4",
     "@babel/traverse": "^7.28.4",
-    "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.5",
-    "acorn": "^8.11.3",
+    "acorn": "^8.15.0",
     "chalk": "^5.3.0",
     "chokidar": "^3.6.0",
     "commander": "^12.1.0",
     "cosmiconfig": "^9.0.0",
-    "dotenv": "^16.4.5",
-    "events": "^3.3.0",
     "ignore": "^5.3.1",
     "joi": "^17.13.1",
     "ora": "^8.0.1",
     "p-limit": "^5.0.0",
-    "pino": "^9.1.0",
-    "pino-pretty": "^11.1.0",
     "prettier": "^3.2.5",
     "prompts": "^2.4.2",
     "tar": "^7.1.0"
